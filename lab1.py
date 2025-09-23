@@ -1,183 +1,54 @@
-import pygame
-import random
-import sys
+import pygame, random, sys
 
 pygame.init()
-FONT = pygame.font.SysFont(None, 28)
-BIGFONT = pygame.font.SysFont(None, 36)
+SIZE, TILE, GAP, MARGIN = 4, 60, 5, 20
+FONT = pygame.font.SysFont(None, 32)
 
-# настройки игры
-BOARD_N = 4          # размер доски 4х4 (пятнашки)
-TILE_SIZE = 80       # размер одной плитки в пикселях
-MARGIN = 20          # отступы от краёв экрана
-GAP = 10             # расстояние между плитками
-
-# цвета
-BG = (30, 30, 30)            # фон
-TILE_COLOR = (200, 200, 200) # цвет плиток
-EMPTY_COLOR = (50, 50, 50)   # цвет пустой клетки (0)
-TEXT_COLOR = (10, 10, 10)    # цвет цифр на плитках
-WIN_COLOR = (0, 200, 0)      # цвет текста при победе
-
-# проверка, решаема ли конфигурация плиток
-def is_solvable(tiles, n):
-    inv_count = 0
+def is_solvable(tiles):
     arr = [t for t in tiles if t != 0]
-    for i in range(len(arr)):
-        for j in range(i+1, len(arr)):
-            if arr[i] > arr[j]:
-                inv_count += 1
-    # координата пустой клетки снизу
-    blank_row_from_bottom = n - (tiles.index(0) // n)
-    # условие решаемости
-    if n % 2 == 1:
-        return inv_count % 2 == 0
-    else:
-        return (inv_count + blank_row_from_bottom) % 2 == 0
+    inv = sum(arr[i] > arr[j] for i in range(len(arr)) for j in range(i+1, len(arr)))
+    blank_row = SIZE - (tiles.index(0) // SIZE)
+    return (inv + blank_row) % 2 == 0
 
-# Класс доски — каждая доска хранит своё состояние плиток
-class Board:
-    def __init__(self, n=4, pos=(0,0)):
-        self.n = n              # размер доски (n x n)
-        self.pos = pos          # где рисовать доску (координаты на экране)
-        self.reset()            # сразу создаём новую раскладку
-
-    def reset(self):
-        # генерируем случайную решаемую раскладку
-        while True:
-            self.tiles = list(range(1, self.n*self.n)) + [0]
-            random.shuffle(self.tiles)
-            if is_solvable(self.tiles, self.n):
-                break
-        self.moves = 0              # счётчик ходов
-
-    def draw(self, surface):
-        # рисуем плитки на экране
-        x0, y0 = self.pos
-        w = self.n
-        for idx, val in enumerate(self.tiles):
-            rx = idx % w   # колонка
-            ry = idx // w  # строка
-            # прямоугольник плитки
-            tile_rect = pygame.Rect(x0 + rx*(TILE_SIZE+GAP), y0 + ry*(TILE_SIZE+GAP), TILE_SIZE, TILE_SIZE)
-            if val == 0:
-                # пустая клетка
-                pygame.draw.rect(surface, EMPTY_COLOR, tile_rect, border_radius=6)
-            else:
-                # плитка с числом
-                pygame.draw.rect(surface, TILE_COLOR, tile_rect, border_radius=6)
-                txt = BIGFONT.render(str(val), True, TEXT_COLOR)
-                txt_r = txt.get_rect(center=tile_rect.center)
-                surface.blit(txt, txt_r)
-
-    def try_move(self, idx):
-        # попытка сдвинуть плитку по индексу
-        blank = self.tiles.index(0)         # где находится пустая клетка
-        bx, by = blank % self.n, blank // self.n
-        ix, iy = idx % self.n, idx // self.n
-        # плитка может двигаться только если она рядом с пустой
-        if abs(bx - ix) + abs(by - iy) == 1:
-            # меняем местами выбранную плитку и пустую
-            self.tiles[blank], self.tiles[idx] = self.tiles[idx], self.tiles[blank]
-            self.moves += 1
-            return True
-        return False
-
-    def click(self, mouse_pos):
-        # обработка клика мышкой
-        x0, y0 = self.pos
-        mx, my = mouse_pos
-        w = self.n
-        rx = (mx - x0) // (TILE_SIZE + GAP)
-        ry = (my - y0) // (TILE_SIZE + GAP)
-        if 0 <= rx < w and 0 <= ry < w:
-            idx = ry * w + rx
-            return self.try_move(idx)
-        return False
-
-    def move_by_key(self, key, controls):
-        # обработка управления с клавиатуры
-        blank = self.tiles.index(0)
-        x, y = blank % self.n, blank // self.n
-        target = None
-        # проверяем какая кнопка нажата и где можно сдвинуть пустую клетку
-        if key == controls['left'] and x < self.n - 1:
-            target = blank + 1
-        elif key == controls['right'] and x > 0:
-            target = blank - 1
-        elif key == controls['up'] and y < self.n - 1:
-            target = blank + self.n
-        elif key == controls['down'] and y > 0:
-            target = blank - self.n
-        if target is not None:
-            return self.try_move(target)
-        return False
-
-    def is_solved(self):
-        # проверка победы: числа идут по порядку, последняя клетка = 0
-        return self.tiles == list(range(1, self.n*self.n)) + [0]
-
-# размеры окна (рассчитываются для 2 досок)
-SCREEN_W = 2*(TILE_SIZE*BOARD_N + (BOARD_N-1)*GAP) + 3*MARGIN
-SCREEN_H = TILE_SIZE*BOARD_N + (BOARD_N-1)*GAP + 2*MARGIN + 100
-screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
-pygame.display.set_caption('Пятнашки — два игрока')
-clock = pygame.time.Clock()
-
-def game_loop():
-    # создаём две доски: левую и правую
-    left_x = MARGIN
-    right_x = SCREEN_W - (BOARD_N*TILE_SIZE + (BOARD_N-1)*GAP) - MARGIN
-    y = MARGIN
-    b1 = Board(BOARD_N, pos=(left_x, y))
-    b2 = Board(BOARD_N, pos=(right_x, y))
-    boards = [b1, b2]
-
-    # управление для игроков
-    controls1 = {'up': pygame.K_w, 'down': pygame.K_s, 'left': pygame.K_a, 'right': pygame.K_d}
-    controls2 = {'up': pygame.K_UP, 'down': pygame.K_DOWN, 'left': pygame.K_LEFT, 'right': pygame.K_RIGHT}
-
-    winner = None  # сюда запишем номер победившего игрока
-
+def new_board():
     while True:
-        screen.fill(BG)
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit(); sys.exit()
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
-                    pygame.quit(); sys.exit()
-                # проверяем, какую кнопку нажал игрок 1
-                b1.move_by_key(event.key, controls1)
-                # проверяем, какую кнопку нажал игрок 2
-                b2.move_by_key(event.key, controls2)
-            elif event.type == pygame.MOUSEBUTTONDOWN:
-                mx, my = event.pos
-                for b in boards:
-                    b.click((mx,my))
+        tiles = list(range(1, SIZE*SIZE)) + [0]
+        random.shuffle(tiles)
+        if is_solvable(tiles):
+            return tiles
 
-        # проверяем победу, если ещё никто не выиграл
-        if winner is None:
-            if b1.is_solved():
-                winner = 1
-            elif b2.is_solved():
-                winner = 2
+class Board:
+    def __init__(self,pos): self.tiles,new_pos=new_board(),pos; self.pos=pos
+    def draw(self,screen):
+        x0,y0=self.pos
+        for i,v in enumerate(self.tiles):
+            r,c=divmod(i,SIZE)
+            rect=pygame.Rect(x0+c*(TILE+GAP),y0+r*(TILE+GAP),TILE,TILE)
+            pygame.draw.rect(screen,(60,60,60) if v==0 else (200,200,200),rect)
+            if v: screen.blit(FONT.render(str(v),True,(0,0,0)),rect.move(15,10))
+    def move(self,key,keys):
+        blank=self.tiles.index(0); r,c=divmod(blank,SIZE); t=None
+        if key==keys['up']and r<SIZE-1:t=blank+SIZE
+        if key==keys['down']and r>0:t=blank-SIZE
+        if key==keys['left']and c<SIZE-1:t=blank+1
+        if key==keys['right']and c>0:t=blank-1
+        if t is not None:self.tiles[blank],self.tiles[t]=self.tiles[t],self.tiles[blank]
+    def solved(self): return self.tiles==list(range(1,SIZE*SIZE))+[0]
 
-        # рисуем обе доски и счётчики ходов
-        for i, b in enumerate(boards):
-            b.draw(screen)
-            px, py = b.pos
-            moves_txt = FONT.render(f'Игрок {i+1} — Ходы: {b.moves}', True, (220,220,220))
-            screen.blit(moves_txt, (px, SCREEN_H - 60))
+W=2*(SIZE*TILE+(SIZE-1)*GAP)+3*MARGIN; H=SIZE*TILE+(SIZE-1)*GAP+2*MARGIN+40
+screen=pygame.display.set_mode((W,H)); clock=pygame.time.Clock()
+b1=Board((MARGIN,MARGIN)); b2=Board((W-(SIZE*TILE+(SIZE-1)*GAP)-MARGIN,MARGIN))
+c1={'up':pygame.K_w,'down':pygame.K_s,'left':pygame.K_a,'right':pygame.K_d}
+c2={'up':pygame.K_UP,'down':pygame.K_DOWN,'left':pygame.K_LEFT,'right':pygame.K_RIGHT}
+winner=None
 
-        # если есть победитель — пишем сообщение в центре экрана
-        if winner is not None:
-            win_txt = BIGFONT.render(f'Игрок {winner} победил!', True, WIN_COLOR)
-            win_r = win_txt.get_rect(center=(SCREEN_W//2, SCREEN_H-30))
-            screen.blit(win_txt, win_r)
-
-        pygame.display.flip()
-        clock.tick(30)
-
-if __name__ == '__main__':
-    game_loop()
+while True:
+    for e in pygame.event.get():
+        if e.type==pygame.QUIT or(e.type==pygame.KEYDOWN and e.key==pygame.K_ESCAPE): sys.exit()
+        if e.type==pygame.KEYDOWN: b1.move(e.key,c1); b2.move(e.key,c2)
+    if not winner:
+        if b1.solved():winner=1
+        if b2.solved():winner=2
+    screen.fill((30,30,30)); b1.draw(screen); b2.draw(screen)
+    if winner: screen.blit(FONT.render(f"Игрок {winner} победил!",True,(0,255,0)),(W//2-100,H-30))
+    pygame.display.flip(); clock.tick(30)
